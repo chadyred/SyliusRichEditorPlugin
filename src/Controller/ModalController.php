@@ -50,7 +50,7 @@ class ModalController extends AbstractController
     public function formAction(Request $request): Response
     {
         // Check request
-        $data = $request->get('data') ?? null;
+        $data = $request->query->get('data') ?? null;
         if (empty($data)) {
             throw $this->createNotFoundException();
         }
@@ -124,27 +124,50 @@ class ModalController extends AbstractController
         $element = new \stdClass();
         $element->type = $uiElement->getType();
         $element->fields = new \stdClass();
+
         foreach ($uiElement->getFields() as $field) {
             // If file, upload it and retrieve the path
+            dump($field);
             if (($file = $request->files->get($uiElementType)) && isset($file[$field])) {
-                $element->fields->{$field} = $this->uploadAndReturnPath($file[$field]);
-            // Value in form exists, we take it
+                dump($file[$field]);
+                $this->handleRequestFilesData($element, $file, $field);
             } elseif (($value = $request->request->get($uiElementType)) && isset($value[$field])) {
-                // Allow array if choices inputs
-                if (is_array($value[$field])) {
-                    $element->fields->{$field} = $value[$field];
-                } else {
-                    $element->fields->{$field} = (string) $value[$field];
-                }
+                dump($value[$field]);
+                $this->handleRequestData($element, $value, $field);
             // Value is not set, set an empty one
             } else {
                 $element->fields->{$field} = '';
             }
         }
-
+        dd($element);
         return new JsonResponse(['element' => $element]);
     }
 
+    private function handleRequestFilesData(&$element, $file, $field)
+    {
+        if (!($file instanceof UploadedFile) && is_array($file[$field])) {
+            // Create object with UiElement data
+            $elementChild = new \stdClass();
+            $elementChild->fields = new \stdClass();
+            foreach ($file[$field] as $subField => $subFile) {
+                $this->handleRequestFilesData($elementChild, $subFile, $subField);
+                $element->fields->{$field}[$subField] = $elementChild->fields->{$subField};
+            }
+        } else {
+            $element->fields->{$field} = $this->uploadAndReturnPath($file);
+        }
+    }
+
+    private function handleRequestData(&$element, $value, $field)
+    {
+        // Allow array if choices inputs
+        if (is_array($value[$field])) {
+            $element->fields->{$field} = $value[$field];
+        } else {
+            $element->fields->{$field} = (string) $value[$field];
+        }
+
+    }
     /**
      * Upload file in folder in config and return the path from public folder
      *
